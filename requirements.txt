@@ -1,0 +1,25 @@
+asitop==0.0.24
+blessed==1.21.0
+blinker==1.9.0
+click==8.1.8
+dashing==0.1.0
+Flask==3.1.1
+importlib_metadata==8.7.0
+itsdangerous==2.2.0
+Jinja2==3.1.6
+MarkupSafe==3.0.2
+numpy==2.0.2
+platformdirs==4.3.8
+psutil==7.0.0
+pyopencl==2025.1
+pytools==2024.1.14
+siphash24==1.7
+typing_extensions==4.14.0
+wcwidth==0.2.13
+Werkzeug==3.1.3
+zipp==3.23.0
+
+# Platform-specific libraries
+# WMI is only for Windows to gather hardware information.
+pywin32; platform_system == "Windows"
+WMI==1.4.9

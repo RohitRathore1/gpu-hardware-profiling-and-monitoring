@@ -1,0 +1,169 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>GPU Monitoring Dashboard</title>
+    <style>
+        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; background-color: #f4f7f6; color: #333; margin: 0; padding: 20px; }
+        h1, h2 { color: #1a73e8; }
+        .container { max-width: 1200px; margin: auto; background: #fff; padding: 20px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
+        .grid-container { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 20px; }
+        .card { background: #f9f9f9; padding: 15px; border-radius: 5px; border: 1px solid #eee; }
+        .card h3 { margin-top: 0; }
+        .metric { display: flex; justify-content: space-between; padding: 5px 0; border-bottom: 1px solid #e0e0e0; }
+        .metric:last-child { border-bottom: none; }
+        .metric-label { font-weight: bold; }
+        .alerts { background-color: #fffbe6; border: 1px solid #ffe58f; padding: 15px; border-radius: 5px; margin-top: 20px; }
+        .alerts h3 { color: #faad14; }
+        #timestamp { text-align: right; color: #666; font-size: 0.9em; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>GPU Monitoring Dashboard</h1>
+        <div id="timestamp">Loading...</div>
+        
+        <div id="alerts-container" class="alerts" style="display: none;">
+            <h3>Alerts</h3>
+            <ul id="alerts-list"></ul>
+        </div>
+
+        <h2>System Metrics</h2>
+        <div class="grid-container" id="system-metrics">
+            <!-- System metrics will be loaded here -->
+        </div>
+
+        <h2>GPU Metrics</h2>
+        <div id="gpu-metrics-container">
+            <!-- GPU cards will be loaded here -->
+        </div>
+
+        <h2>GPU Processes</h2>
+        <div id="gpu-processes-container">
+            <!-- GPU processes will be loaded here -->
+        </div>
+    </div>
+
+    <script>
+        function formatBytes(bytes, decimals = 2) {
+            if (bytes === 0) return '0 Bytes';
+            const k = 1024;
+            const dm = decimals < 0 ? 0 : decimals;
+            const sizes = ['Bytes', 'KB', 'MB', 'GB', 'TB'];
+            const i = Math.floor(Math.log(bytes) / Math.log(k));
+            return parseFloat((bytes / Math.pow(k, i)).toFixed(dm)) + ' ' + sizes[i];
+        }
+
+        function renderGpuCard(gpu, vendor) {
+            let metricsHtml = `
+                <div class="metric"><span class="metric-label">Temperature</span><span>${gpu.temp_gpu || 'N/A'} °C</span></div>
+                <div class="metric"><span class="metric-label">GPU Utilization</span><span>${gpu.util_gpu || 'N/A'} %</span></div>
+                <div class="metric"><span class="metric-label">Memory Utilization</span><span>${gpu.util_memory || 'N/A'} %</span></div>
+                <div class="metric"><span class="metric-label">Memory Used</span><span>${gpu.memory_used || 'N/A'} / ${gpu.memory_total || 'N/A'} MB</span></div>
+                <div class="metric"><span class="metric-label">Power Draw</span><span>${gpu.power_draw || 'N/A'} / ${gpu.power_limit || 'N/A'} W</span></div>
+                <div class="metric"><span class="metric-label">Fan Speed</span><span>${gpu.fan_speed || 'N/A'} %</span></div>
+                <div class="metric"><span class="metric-label">Graphics Clock</span><span>${gpu.clock_graphics || 'N/A'} MHz</span></div>
+                <div class="metric"><span class="metric-label">Memory Clock</span><span>${gpu.clock_memory || 'N/A'} MHz</span></div>
+            `;
+            return `
+                <div class="card">
+                    <h3>${gpu.name} (${vendor})</h3>
+                    ${metricsHtml}
+                </div>`;
+        }
+        
+        async function fetchMetrics() {
+            try {
+                const response = await fetch('/api/metrics');
+                const data = await response.json();
+
+                // Timestamp
+                document.getElementById('timestamp').innerText = `Last updated: ${new Date(data.timestamp).toLocaleTimeString()}`;
+
+                // Alerts
+                const alertsContainer = document.getElementById('alerts-container');
+                const alertsList = document.getElementById('alerts-list');
+                if (data.alerts && data.alerts.length > 0) {
+                    alertsList.innerHTML = data.alerts.map(alert => `<li>${alert}</li>`).join('');
+                    alertsContainer.style.display = 'block';
+                } else {
+                    alertsContainer.style.display = 'none';
+                }
+
+                // System Metrics
+                const system = data.system;
+                const systemMetrics = `
+                    <div class="card">
+                        <h3>CPU</h3>
+                        <div class="metric"><span class="metric-label">Utilization</span><span>${system.cpu_percent.toFixed(1)} %</span></div>
+                        <div class="metric"><span class="metric-label">Load Average</span><span>${system.load_average ? system.load_average.map(l => l.toFixed(2)).join(', ') : 'N/A'}</span></div>
+                    </div>
+                    <div class="card">
+                        <h3>Memory</h3>
+                        <div class="metric"><span class="metric-label">Utilization</span><span>${system.memory_percent.toFixed(1)} %</span></div>
+                    </div>
+                    <div class="card">
+                        <h3>Network I/O</h3>
+                        <div class="metric"><span class="metric-label">Sent</span><span>${formatBytes(system.network_io.bytes_sent)}</span></div>
+                        <div class="metric"><span class="metric-label">Received</span><span>${formatBytes(system.network_io.bytes_recv)}</span></div>
+                    </div>
+                `;
+                document.getElementById('system-metrics').innerHTML = systemMetrics;
+
+                // GPU Metrics
+                const gpuContainer = document.getElementById('gpu-metrics-container');
+                gpuContainer.innerHTML = '';
+                if (data.gpus) {
+                    const gpuGrid = document.createElement('div');
+                    gpuGrid.className = 'grid-container';
+                    
+                    if (data.gpus.nvidia_gpus) {
+                        data.gpus.nvidia_gpus.forEach(gpu => gpuGrid.innerHTML += renderGpuCard(gpu, 'NVIDIA'));
+                    }
+                    if (data.gpus.amd_gpus) {
+                        data.gpus.amd_gpus.forEach(gpu => gpuGrid.innerHTML += renderGpuCard(gpu, 'AMD'));
+                    }
+                    if (data.gpus.intel_gpus) {
+                        data.gpus.intel_gpus.forEach(gpu => gpuGrid.innerHTML += renderGpuCard(gpu, 'Intel'));
+                    }
+                    gpuContainer.appendChild(gpuGrid);
+                }
+
+                // Render Apple Silicon GPUs
+                if (data.apple_gpus && data.apple_gpus.length > 0) {
+                    let html = '<h3>Apple Silicon GPUs</h3>';
+                    data.apple_gpus.forEach(gpu => {
+                        html += `<div class="card">`;
+                        html += `<h4>${gpu.name} (ID: ${gpu.index})</h4>`;
+                        html += `<div class="metric"><span>GPU Utilization</span><strong>${gpu.util_gpu !== null ? gpu.util_gpu + ' %' : 'N/A'}</strong></div>`;
+                        html += `<div class="metric"><span>Temperature</span><strong>${gpu.temp_gpu !== null ? gpu.temp_gpu + ' °C' : 'N/A'}</strong></div>`;
+                        html += `<div class="metric"><span>Power Draw</span><strong>${gpu.power_draw_w !== null ? gpu.power_draw_w + ' W' : 'N/A'}</strong></div>`;
+                        html += '</div>'; // close card
+                    });
+                    gpuContainer.innerHTML += html;
+                }
+
+                // GPU Processes
+                const processContainer = document.getElementById('gpu-processes-container');
+                processContainer.innerHTML = '';
+                if (data.gpu_processes && data.gpu_processes.length > 0) {
+                    let processHtml = '<h3>GPU Processes</h3><div class="card process-list">';
+                    data.gpu_processes.forEach(p => {
+                        processHtml += `<div class="metric"><span>${p.process_name} (PID: ${p.pid})</span><span class="metric-label">${p.used_memory} MB</span></div>`;
+                    });
+                    processHtml += '</div>';
+                    processContainer.innerHTML = processHtml;
+                }
+
+            } catch (error) {
+                console.error('Error fetching metrics:', error);
+                document.getElementById('timestamp').innerText = 'Error loading data.';
+            }
+        }
+
+        setInterval(fetchMetrics, 2000);
+        window.onload = fetchMetrics;
+    </script>
+</body>
+</html> 
