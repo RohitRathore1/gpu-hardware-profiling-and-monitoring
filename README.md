@@ -69,36 +69,4 @@ This command starts a continuous monitoring service and launches a web server to
 python3 run.py monitor
 ```
 
-The dashboard will be available at `http://127.0.0.1:8050`.
-
-## Running with Docker
-
-You can also run the application inside a Docker container, which simplifies setup and ensures a consistent environment.
-
-### 1. Build the Docker Image
-
-First, build the Docker image from the project root:
-
-```bash
-docker build -t gpu-monitor .
-```
-
-### 2. Run the Container
-
-To run the monitoring dashboard, use the following command. This will map the container's port 8050 to your local machine.
-
-```bash
-docker run -p 8050:8050 gpu-monitor
-```
-
-The dashboard will be available at `http://127.0.0.1:8050`.
-
-#### Accessing NVIDIA GPUs
-
-To allow the container to access NVIDIA GPUs, you need the [NVIDIA Container Toolkit](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/latest/index.html). Run the container with the `--gpus all` flag:
-
-```bash
-docker run --gpus all -p 8050:8050 gpu-monitor
-```
-
-This will enable the dashboard to show real-time NVIDIA GPU metrics. 
+The dashboard will be available at `http://127.0.0.1:8000`.
