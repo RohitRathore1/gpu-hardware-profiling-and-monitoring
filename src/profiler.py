@@ -60,6 +60,28 @@ class GPUProfiler:
             
         return gpus
 
+    def get_gpus_linux(self) -> List[Dict]:
+        """Get GPU information on Linux by combining results from all vendors."""
+        gpus = []
+        
+        nvidia_gpus = self.get_nvidia_gpus_linux()
+        gpus.extend(nvidia_gpus)
+        
+        amd_gpus = self.get_amd_gpus_linux()
+        for i, gpu in enumerate(amd_gpus):
+            gpu['index'] = len(nvidia_gpus) + i
+        gpus.extend(amd_gpus)
+        
+        intel_gpus = self.get_intel_gpus_linux()
+        for i, gpu in enumerate(intel_gpus):
+            gpu['index'] = len(nvidia_gpus) + len(amd_gpus) + i
+        gpus.extend(intel_gpus)
+        
+        if not gpus:
+            gpus = self.get_opencl_gpus()
+            
+        return gpus
+
     def get_gpus_windows(self) -> List[Dict]:
         """Get GPU information using WMI on Windows."""
         import wmi
@@ -89,6 +111,42 @@ class GPUProfiler:
         except Exception as e:
             self.logger.error(f"An error occurred during WMI query: {e}")
             return []
+        return gpus
+
+    def get_opencl_gpus(self) -> List[Dict]:
+        """Get GPU information using OpenCL as a fallback method."""
+        gpus = []
+        try:
+            platforms = cl.get_platforms()
+            gpu_index = 0
+            for platform in platforms:
+                devices = platform.get_devices(device_type=cl.device_type.GPU)
+                for device in devices:
+                    vendor = device.vendor.strip()
+                    name = device.name.strip()
+                    
+                    try:
+                        memory_mb = device.global_mem_size / (1024 * 1024)
+                    except:
+                        memory_mb = None
+                        
+                    try:
+                        driver_version = device.driver_version
+                    except:
+                        driver_version = "N/A"
+                    
+                    gpus.append({
+                        'index': gpu_index,
+                        'vendor': vendor,
+                        'name': name,
+                        'driver_version': driver_version,
+                        'memory_total_mb': memory_mb,
+                        'opencl_device': True  # Mark as OpenCL detected
+                    })
+                    gpu_index += 1
+        except Exception as e:
+            self.logger.warning(f"OpenCL detection failed: {e}")
+            
         return gpus
 
     def get_nvidia_gpus_linux(self) -> List[Dict]:
