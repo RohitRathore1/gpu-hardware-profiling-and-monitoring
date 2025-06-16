@@ -142,64 +142,84 @@ class GPUMonitor:
             return {'tpu_gpus': []}
         
         tpu_metrics = []
-
+        
+        # Method 1: Check for TPU monitoring via sysfs
         try:
             import os
             import glob
             
+            # Check for TPU devices in /sys/class/accel
             accel_path = '/sys/class/accel'
             if os.path.exists(accel_path):
-                for device in os.listdir(accel_path):
+                for device in sorted(os.listdir(accel_path)):
                     device_path = os.path.join(accel_path, device)
                     if os.path.islink(device_path):
                         try:
+                            real_path = os.path.realpath(device_path)
                             metrics_dict = {
                                 'device': device,
                                 'name': f'TPU {device}',
                                 'vendor': 'Google'
                             }
                             
-                            temp_files = glob.glob(os.path.join(device_path, 'device', '*temp*'))
-                            if temp_files:
+                            # Read TPU status
+                            status_file = os.path.join(real_path, 'status')
+                            if os.path.exists(status_file):
                                 try:
-                                    with open(temp_files[0], 'r') as f:
-                                        temp = int(f.read().strip()) / 1000  # Convert from millidegrees
-                                        metrics_dict['temp_tpu'] = temp
+                                    with open(status_file, 'r') as f:
+                                        metrics_dict['status'] = f.read().strip()
+                                except:
+                                    metrics_dict['status'] = 'Unknown'
+                            
+                            # Read memory ranges
+                            mem_ranges_file = os.path.join(real_path, 'user_mem_ranges')
+                            if os.path.exists(mem_ranges_file):
+                                try:
+                                    with open(mem_ranges_file, 'r') as f:
+                                        mem_ranges = f.read().strip().split('\n')
+                                        # Parse memory ranges to calculate total memory
+                                        total_memory_mb = 0
+                                        for mem_range in mem_ranges:
+                                            if '-' in mem_range:
+                                                start, end = mem_range.split('-')
+                                                start_addr = int(start, 16)
+                                                end_addr = int(end, 16)
+                                                total_memory_mb += (end_addr - start_addr) / (1024 * 1024)
+                                        metrics_dict['memory_total'] = int(total_memory_mb)
                                 except:
                                     pass
                             
-                            # Power consumption
-                            power_files = glob.glob(os.path.join(device_path, 'device', '*power*'))
-                            for pf in power_files:
-                                if 'power_now' in pf or 'power1_input' in pf:
+                            # Get PCI device info
+                            device_dir = os.path.join(real_path, 'device')
+                            if os.path.exists(device_dir):
+                                # Read vendor and device IDs
+                                vendor_file = os.path.join(device_dir, 'vendor')
+                                device_file = os.path.join(device_dir, 'device')
+                                if os.path.exists(vendor_file) and os.path.exists(device_file):
                                     try:
-                                        with open(pf, 'r') as f:
-                                            power = int(f.read().strip()) / 1000000  # Convert to watts
-                                            metrics_dict['power_draw'] = power
+                                        with open(vendor_file, 'r') as f:
+                                            vendor_id = f.read().strip()
+                                        with open(device_file, 'r') as f:
+                                            device_id = f.read().strip()
+                                        metrics_dict['pci_id'] = f"{vendor_id}:{device_id}"
                                     except:
                                         pass
                             
-                            # Memory info
-                            mem_files = glob.glob(os.path.join(device_path, 'device', '*mem*'))
-                            for mf in mem_files:
-                                if 'mem_total' in mf:
-                                    try:
-                                        with open(mf, 'r') as f:
-                                            metrics_dict['memory_total'] = int(f.read().strip()) / (1024 * 1024)  # Convert to MB
-                                    except:
-                                        pass
-                                elif 'mem_used' in mf:
-                                    try:
-                                        with open(mf, 'r') as f:
-                                            metrics_dict['memory_used'] = int(f.read().strip()) / (1024 * 1024)  # Convert to MB
-                                    except:
-                                        pass
+                            # Note: Temperature, power, and detailed memory usage are not available
+                            # for Google Cloud TPUs through sysfs
+                            metrics_dict['temp_tpu'] = None  # Not available
+                            metrics_dict['power_draw'] = None  # Not available
+                            metrics_dict['memory_used'] = None  # Not available
                             
                             tpu_metrics.append(metrics_dict)
                         except Exception:
                             pass
         except Exception as e:
             self.logger.debug(f"Error reading TPU metrics from sysfs: {e}")
+        
+        # Method 2: Try to use any TPU-specific monitoring tools if available
+        # This is a placeholder for future TPU-specific monitoring tools
+        # For example, if Google provides a tpu-smi tool similar to nvidia-smi
         
         return {'tpu_gpus': tpu_metrics}
 
