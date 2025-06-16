@@ -143,7 +143,6 @@ class GPUMonitor:
         
         tpu_metrics = []
         
-        # Method 1: Check for TPU monitoring via sysfs
         try:
             import os
             import glob
@@ -216,10 +215,6 @@ class GPUMonitor:
                             pass
         except Exception as e:
             self.logger.debug(f"Error reading TPU metrics from sysfs: {e}")
-        
-        # Method 2: Try to use any TPU-specific monitoring tools if available
-        # This is a placeholder for future TPU-specific monitoring tools
-        # For example, if Google provides a tpu-smi tool similar to nvidia-smi
         
         return {'tpu_gpus': tpu_metrics}
 
