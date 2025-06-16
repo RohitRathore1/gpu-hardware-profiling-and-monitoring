@@ -73,6 +73,21 @@
                 </div>`;
         }
         
+        function renderTpuCard(tpu) {
+            let metricsHtml = `
+                <div class="metric"><span class="metric-label">Device</span><span>${tpu.device || 'N/A'}</span></div>
+                <div class="metric"><span class="metric-label">Temperature</span><span>${tpu.temp_tpu !== undefined ? tpu.temp_tpu + ' °C' : 'N/A'}</span></div>
+                <div class="metric"><span class="metric-label">Power Draw</span><span>${tpu.power_draw !== undefined ? tpu.power_draw + ' W' : 'N/A'}</span></div>
+                <div class="metric"><span class="metric-label">Memory Total</span><span>${tpu.memory_total !== undefined ? tpu.memory_total + ' MB' : 'N/A'}</span></div>
+                <div class="metric"><span class="metric-label">Memory Used</span><span>${tpu.memory_used !== undefined ? tpu.memory_used + ' MB' : 'N/A'}</span></div>
+            `;
+            return `
+                <div class="card">
+                    <h3>${tpu.name} (${tpu.vendor})</h3>
+                    ${metricsHtml}
+                </div>`;
+        }
+        
         async function fetchMetrics() {
             try {
                 const response = await fetch('/api/metrics');
@@ -126,6 +141,9 @@
                     }
                     if (data.gpus.intel_gpus) {
                         data.gpus.intel_gpus.forEach(gpu => gpuGrid.innerHTML += renderGpuCard(gpu, 'Intel'));
+                    }
+                    if (data.gpus.tpu_gpus) {
+                        data.gpus.tpu_gpus.forEach(tpu => gpuGrid.innerHTML += renderTpuCard(tpu));
                     }
                     gpuContainer.appendChild(gpuGrid);
                 }
