@@ -2,12 +2,12 @@
 
 It provides a comprehensive, cross-platform toolkit to capture GPU hardware details, profile the software stack, and implement active, real-time monitoring with a web-based dashboard.
 
-It is designed to work on both **Linux**, **MacOS** and **Windows** and can detect GPUs from major vendors like **NVIDIA, AMD, and Intel**.
+It is designed to work on both **Linux**, **MacOS** and **Windows** and can detect GPUs from major vendors like **NVIDIA, AMD, Intel, and Google TPUs (on Linux)**.
 
 ## Features
 
 - **Platform Profiling**: Gathers detailed information about:
-  - **GPU Hardware**: Vendor, model, memory.
+  - **GPU Hardware**: Vendor, model, memory (supports NVIDIA, AMD, Intel, and Google TPUs).
   - **System**: OS, architecture, hostname.
   - **Software Stack**: GPU drivers, CUDA version, OpenCL availability.
 - **Workload Monitoring**: Provides real-time metrics for:
@@ -25,6 +25,7 @@ It is designed to work on both **Linux**, **MacOS** and **Windows** and can dete
 - **GPU Drivers**: Ensure the appropriate drivers for your GPU(s) are installed.
   - **NVIDIA**: NVIDIA drivers, which include `nvidia-smi`.
   - **AMD (Linux)**: AMDGPU drivers and the `rocm-smi` tool.
+  - **Google TPUs (Linux)**: TPU drivers (gasket, apex modules).
   - **Windows**: Standard WDDM drivers for all vendors.
 
 ### Installation

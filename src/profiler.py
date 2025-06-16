@@ -77,6 +77,12 @@ class GPUProfiler:
             gpu['index'] = len(nvidia_gpus) + len(amd_gpus) + i
         gpus.extend(intel_gpus)
         
+        # Try to get Google TPUs
+        tpu_gpus = self.get_tpu_gpus_linux()
+        for i, tpu in enumerate(tpu_gpus):
+            tpu['index'] = len(nvidia_gpus) + len(amd_gpus) + len(intel_gpus) + i
+        gpus.extend(tpu_gpus)
+        
         if not gpus:
             gpus = self.get_opencl_gpus()
             
@@ -222,6 +228,74 @@ class GPUProfiler:
             pass # lspci not available
         return gpus
     
+    def get_tpu_gpus_linux(self) -> List[Dict]:
+        """Get Google TPU information on Linux."""
+        gpus = []
+        
+        try:
+            import glob
+            tpu_devices = glob.glob('/dev/accel*') + glob.glob('/dev/apex_*')
+            if tpu_devices:
+                for i, device in enumerate(tpu_devices):
+                    gpus.append({
+                        'vendor': 'Google',
+                        'name': f'TPU Device {i}',
+                        'device_path': device,
+                        'driver_version': self._get_tpu_driver_version_linux()
+                    })
+        except Exception:
+            pass
+        
+        try:
+            result = subprocess.run(['lspci', '-nn'], capture_output=True, text=True, check=True)
+            for line in result.stdout.split('\n'):
+
+                if '1ae0' in line or 'Google' in line.lower() and ('tpu' in line.lower() or 'tensor' in line.lower()):
+                    gpus.append({
+                        'vendor': 'Google',
+                        'name': line.split(':')[-1].strip(),
+                        'driver_version': self._get_tpu_driver_version_linux()
+                    })
+        except (subprocess.CalledProcessError, FileNotFoundError):
+            pass
+
+        try:
+            result = subprocess.run(['which', 'lspci'], capture_output=True, text=True)
+            if result.returncode == 0:
+                import os
+                accel_path = '/sys/class/accel'
+                if os.path.exists(accel_path):
+                    for device in os.listdir(accel_path):
+                        device_path = os.path.join(accel_path, device)
+                        if os.path.islink(device_path):
+                            try:
+                                name_file = os.path.join(device_path, 'device', 'name')
+                                if os.path.exists(name_file):
+                                    with open(name_file, 'r') as f:
+                                        name = f.read().strip()
+                                else:
+                                    name = f'TPU Accelerator {device}'
+                                
+                                gpus.append({
+                                    'vendor': 'Google',
+                                    'name': name,
+                                    'device': device,
+                                    'driver_version': self._get_tpu_driver_version_linux()
+                                })
+                            except Exception:
+                                pass
+        except Exception:
+            pass
+        
+        seen = set()
+        unique_gpus = []
+        for gpu in gpus:
+            if gpu['name'] not in seen:
+                seen.add(gpu['name'])
+                unique_gpus.append(gpu)
+        
+        return unique_gpus
+    
     def _get_amd_driver_version_linux(self) -> Optional[str]:
         """Get AMD driver version on Linux."""
         try:
@@ -242,6 +316,21 @@ class GPUProfiler:
                     return line.split(':')[-1].strip()
         except (subprocess.CalledProcessError, FileNotFoundError):
             return None
+        return None
+
+    def _get_tpu_driver_version_linux(self) -> Optional[str]:
+        """Get TPU driver version on Linux."""
+        try:
+            for module_name in ['tpu', 'apex', 'gasket', 'google_tpu']:
+                try:
+                    result = subprocess.run(['modinfo', module_name], capture_output=True, text=True, check=True)
+                    for line in result.stdout.split('\n'):
+                        if 'version:' in line:
+                            return line.split(':')[-1].strip()
+                except (subprocess.CalledProcessError, FileNotFoundError):
+                    continue
+        except Exception:
+            pass
         return None
 
     def get_system_info(self) -> Dict:

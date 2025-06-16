@@ -32,7 +32,15 @@ class GPUAlerting:
                 if power_percent > self.thresholds['power_draw_percent']:
                     alerts.append(f"ALERT: GPU {gpu['gpu_index']} power draw high: {power_percent:.1f}%")
 
-        # Add checks for AMD and Intel GPUs if monitoring for them is implemented
+        
+        # Check TPU alerts
+        for tpu in metrics.get('tpu_gpus', []):
+            if tpu.get('temp_tpu') and tpu['temp_tpu'] > self.thresholds['temperature']:
+                alerts.append(f"ALERT: TPU {tpu['device']} temperature high: {tpu['temp_tpu']}°C")
+            
+            if tpu.get('power_draw') and tpu['power_draw'] > 100:  # Example threshold for TPU power
+                alerts.append(f"ALERT: TPU {tpu['device']} power draw high: {tpu['power_draw']}W")
+        
         return alerts
 
 class GPUMonitor:
@@ -128,6 +136,88 @@ class GPUMonitor:
             self.logger.error(f"Error getting AMD metrics: {e}")
             return {'amd_gpus': []}
 
+    def get_tpu_metrics(self) -> Dict:
+        """Get Google TPU metrics on Linux."""
+        if self.os_type != 'linux':
+            return {'tpu_gpus': []}
+        
+        tpu_metrics = []
+        
+        try:
+            import os
+            import glob
+            
+            # Check for TPU devices in /sys/class/accel
+            accel_path = '/sys/class/accel'
+            if os.path.exists(accel_path):
+                for device in sorted(os.listdir(accel_path)):
+                    device_path = os.path.join(accel_path, device)
+                    if os.path.islink(device_path):
+                        try:
+                            real_path = os.path.realpath(device_path)
+                            metrics_dict = {
+                                'device': device,
+                                'name': f'TPU {device}',
+                                'vendor': 'Google'
+                            }
+                            
+                            # Read TPU status
+                            status_file = os.path.join(real_path, 'status')
+                            if os.path.exists(status_file):
+                                try:
+                                    with open(status_file, 'r') as f:
+                                        metrics_dict['status'] = f.read().strip()
+                                except:
+                                    metrics_dict['status'] = 'Unknown'
+                            
+                            # Read memory ranges
+                            mem_ranges_file = os.path.join(real_path, 'user_mem_ranges')
+                            if os.path.exists(mem_ranges_file):
+                                try:
+                                    with open(mem_ranges_file, 'r') as f:
+                                        mem_ranges = f.read().strip().split('\n')
+                                        # Parse memory ranges to calculate total memory
+                                        total_memory_mb = 0
+                                        for mem_range in mem_ranges:
+                                            if '-' in mem_range:
+                                                start, end = mem_range.split('-')
+                                                start_addr = int(start, 16)
+                                                end_addr = int(end, 16)
+                                                total_memory_mb += (end_addr - start_addr) / (1024 * 1024)
+                                        metrics_dict['memory_total'] = int(total_memory_mb)
+                                except:
+                                    pass
+                            
+                            # Get PCI device info
+                            device_dir = os.path.join(real_path, 'device')
+                            if os.path.exists(device_dir):
+                                # Read vendor and device IDs
+                                vendor_file = os.path.join(device_dir, 'vendor')
+                                device_file = os.path.join(device_dir, 'device')
+                                if os.path.exists(vendor_file) and os.path.exists(device_file):
+                                    try:
+                                        with open(vendor_file, 'r') as f:
+                                            vendor_id = f.read().strip()
+                                        with open(device_file, 'r') as f:
+                                            device_id = f.read().strip()
+                                        metrics_dict['pci_id'] = f"{vendor_id}:{device_id}"
+                                    except:
+                                        pass
+                            
+                            # Note: Temperature, power, and detailed memory usage are not available
+                            # for Google Cloud TPUs through sysfs
+                            metrics_dict['temp_tpu'] = None  # Not available
+                            metrics_dict['power_draw'] = None  # Not available
+                            metrics_dict['memory_used'] = None  # Not available
+                            
+                            tpu_metrics.append(metrics_dict)
+                        except Exception:
+                            pass
+        except Exception as e:
+            self.logger.debug(f"Error reading TPU metrics from sysfs: {e}")
+        
+        return {'tpu_gpus': tpu_metrics}
+
     def get_system_metrics(self) -> Dict:
         """Get system-level metrics."""
         return {
@@ -175,6 +265,7 @@ class GPUMonitor:
         gpu_metrics = {}
         gpu_metrics.update(self.get_nvidia_metrics())
         gpu_metrics.update(self.get_amd_metrics())
+        gpu_metrics.update(self.get_tpu_metrics())
         # Placeholder for Intel monitoring
         gpu_metrics['intel_gpus'] = []
 
@@ -304,6 +395,7 @@ class GPUMonitor:
             'system': self.get_system_metrics(),
             'gpus': self.get_nvidia_metrics(),
             'amd_gpus': self.get_amd_metrics(),
+            'tpu_gpus': self.get_tpu_metrics(),
             'gpu_processes': self.get_gpu_processes()
         }
 
