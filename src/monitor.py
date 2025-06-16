@@ -32,7 +32,15 @@ class GPUAlerting:
                 if power_percent > self.thresholds['power_draw_percent']:
                     alerts.append(f"ALERT: GPU {gpu['gpu_index']} power draw high: {power_percent:.1f}%")
 
-        # Add checks for AMD and Intel GPUs if monitoring for them is implemented
+        
+        # Check TPU alerts
+        for tpu in metrics.get('tpu_gpus', []):
+            if tpu.get('temp_tpu') and tpu['temp_tpu'] > self.thresholds['temperature']:
+                alerts.append(f"ALERT: TPU {tpu['device']} temperature high: {tpu['temp_tpu']}°C")
+            
+            if tpu.get('power_draw') and tpu['power_draw'] > 100:  # Example threshold for TPU power
+                alerts.append(f"ALERT: TPU {tpu['device']} power draw high: {tpu['power_draw']}W")
+        
         return alerts
 
 class GPUMonitor:
@@ -128,6 +136,73 @@ class GPUMonitor:
             self.logger.error(f"Error getting AMD metrics: {e}")
             return {'amd_gpus': []}
 
+    def get_tpu_metrics(self) -> Dict:
+        """Get Google TPU metrics on Linux."""
+        if self.os_type != 'linux':
+            return {'tpu_gpus': []}
+        
+        tpu_metrics = []
+
+        try:
+            import os
+            import glob
+            
+            accel_path = '/sys/class/accel'
+            if os.path.exists(accel_path):
+                for device in os.listdir(accel_path):
+                    device_path = os.path.join(accel_path, device)
+                    if os.path.islink(device_path):
+                        try:
+                            metrics_dict = {
+                                'device': device,
+                                'name': f'TPU {device}',
+                                'vendor': 'Google'
+                            }
+                            
+                            temp_files = glob.glob(os.path.join(device_path, 'device', '*temp*'))
+                            if temp_files:
+                                try:
+                                    with open(temp_files[0], 'r') as f:
+                                        temp = int(f.read().strip()) / 1000  # Convert from millidegrees
+                                        metrics_dict['temp_tpu'] = temp
+                                except:
+                                    pass
+                            
+                            # Power consumption
+                            power_files = glob.glob(os.path.join(device_path, 'device', '*power*'))
+                            for pf in power_files:
+                                if 'power_now' in pf or 'power1_input' in pf:
+                                    try:
+                                        with open(pf, 'r') as f:
+                                            power = int(f.read().strip()) / 1000000  # Convert to watts
+                                            metrics_dict['power_draw'] = power
+                                    except:
+                                        pass
+                            
+                            # Memory info
+                            mem_files = glob.glob(os.path.join(device_path, 'device', '*mem*'))
+                            for mf in mem_files:
+                                if 'mem_total' in mf:
+                                    try:
+                                        with open(mf, 'r') as f:
+                                            metrics_dict['memory_total'] = int(f.read().strip()) / (1024 * 1024)  # Convert to MB
+                                    except:
+                                        pass
+                                elif 'mem_used' in mf:
+                                    try:
+                                        with open(mf, 'r') as f:
+                                            metrics_dict['memory_used'] = int(f.read().strip()) / (1024 * 1024)  # Convert to MB
+                                    except:
+                                        pass
+                            
+                            tpu_metrics.append(metrics_dict)
+                        except Exception:
+                            pass
+        except Exception as e:
+            self.logger.debug(f"Error reading TPU metrics from sysfs: {e}")
+        
+        return {'tpu_gpus': tpu_metrics}
+
     def get_system_metrics(self) -> Dict:
         """Get system-level metrics."""
         return {
@@ -175,6 +250,7 @@ class GPUMonitor:
         gpu_metrics = {}
         gpu_metrics.update(self.get_nvidia_metrics())
         gpu_metrics.update(self.get_amd_metrics())
+        gpu_metrics.update(self.get_tpu_metrics())
         # Placeholder for Intel monitoring
         gpu_metrics['intel_gpus'] = []
 
@@ -304,6 +380,7 @@ class GPUMonitor:
             'system': self.get_system_metrics(),
             'gpus': self.get_nvidia_metrics(),
             'amd_gpus': self.get_amd_metrics(),
+            'tpu_gpus': self.get_tpu_metrics(),
             'gpu_processes': self.get_gpu_processes()
         }
 
